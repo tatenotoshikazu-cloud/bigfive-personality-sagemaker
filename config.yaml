@@ -1,0 +1,145 @@
+# Big Five性格特性推定 - ハイパーパラメータ設定
+
+# モデル設定
+model:
+  name: "xlm-roberta-large"
+  max_length: 512
+
+  # 回帰ヘッド構造
+  regressor:
+    hidden_layers: [512, 128]  # 隠れ層のサイズ
+    dropout: 0.1
+    activation: "relu"  # relu, gelu, tanh
+
+# LoRA設定
+lora:
+  r: 16                    # LoRAランク（8, 16, 32, 64）
+  alpha: 32                # スケーリング係数（通常はr*2）
+  dropout: 0.1             # Dropout率
+  target_modules:          # LoRA適用レイヤー
+    - "query"
+    - "value"
+    # オプション: "key", "output.dense" も追加可能
+  bias: "none"             # none, all, lora_only
+
+# Stage 1学習設定（Nemotron-Personas-Japan）
+stage1:
+  epochs: 3
+  batch_size: 8
+  gradient_accumulation_steps: 4  # 実質バッチサイズ = 8 * 4 = 32
+  learning_rate: 2.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  max_grad_norm: 1.0              # 勾配クリッピング
+
+  # Learning Rate Scheduler
+  lr_scheduler_type: "cosine"     # linear, cosine, constant, polynomial
+
+  # Early Stopping
+  early_stopping_patience: 3
+
+  # Optimizer
+  optimizer: "adamw"              # adamw, adam, sgd, adafactor
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+
+# Stage 2学習設定（RealPersonaChat）
+stage2:
+  epochs: 5
+  batch_size: 8
+  gradient_accumulation_steps: 2  # 実質バッチサイズ = 8 * 2 = 16
+  learning_rate: 1.0e-4           # Stage1より低め
+  weight_decay: 0.01
+  warmup_ratio: 0.05              # Stage1より短め
+  max_grad_norm: 1.0
+
+  lr_scheduler_type: "cosine"
+  early_stopping_patience: 5
+
+  optimizer: "adamw"
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+
+# データ設定
+data:
+  train_val_split: 0.1
+  random_seed: 42
+  shuffle: true
+
+# SageMaker設定
+sagemaker:
+  region: "us-west-2"
+  instance_type: "ml.g4dn.xlarge"  # ml.g4dn.xlarge, ml.p3.2xlarge, ml.g5.xlarge
+  instance_count: 1
+  keep_alive_period: 1800
+
+  # Spot Instance（コスト削減）
+  use_spot_instances: false
+  max_wait_time: 86400  # 24時間
+
+# ハイパーパラメータチューニング設定（SageMaker Automatic Model Tuning）
+hyperparameter_tuning:
+  enabled: false
+  max_jobs: 20
+  max_parallel_jobs: 2
+  strategy: "Bayesian"  # Bayesian, Random, Grid
+
+  # チューニング対象パラメータ
+  tunable_parameters:
+    learning_rate:
+      type: "continuous"
+      min: 1.0e-5
+      max: 5.0e-4
+      scale: "logarithmic"
+
+    lora_r:
+      type: "integer"
+      min: 8
+      max: 64
+
+    lora_alpha:
+      type: "integer"
+      min: 16
+      max: 128
+
+    batch_size:
+      type: "categorical"
+      values: [4, 8, 16]
+
+    weight_decay:
+      type: "continuous"
+      min: 0.001
+      max: 0.1
+      scale: "logarithmic"
+
+  # 最適化する評価指標
+  objective_metric:
+    name: "validation:mae"
+    type: "Minimize"
+
+# 評価設定
+evaluation:
+  metrics:
+    - "mse"   # Mean Squared Error
+    - "mae"   # Mean Absolute Error
+    - "rmse"  # Root Mean Squared Error
+
+  # Big Five各次元の個別評価
+  per_trait_metrics: true
+
+# ログ・保存設定
+logging:
+  log_level: "INFO"
+  log_steps: 100
+  save_steps: 500
+  save_total_limit: 3
+  load_best_model_at_end: true
+  metric_for_best_model: "mae"
+  greater_is_better: false
+
+# 推論設定（デプロイ用）
+inference:
+  batch_size: 16
+  max_length: 512
