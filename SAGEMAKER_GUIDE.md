@@ -2,6 +2,15 @@
 
 このドキュメントは、ローカルで動作確認したコードをAWS SageMaker上で実行する手順を説明します。
 
+## 🎯 GitHub連携で実行（推奨）
+
+**GitHubリポジトリ**: https://github.com/tatenotoshikazu-cloud/bigfive-personality-sagemaker
+
+SageMakerは、GitHubリポジトリから直接コードを取得して実行できます。これにより：
+- ✅ コードのバージョン管理が容易
+- ✅ S3へのコードアップロード不要
+- ✅ チーム開発が容易
+
 ## ✅ ローカルでの動作確認完了
 
 以下のコードはローカル環境で動作確認済みです：
@@ -44,7 +53,43 @@ aws s3 mb s3://your-bigfive-bucket --region us-west-2
 
 ## 🚀 SageMaker実行手順
 
-### ステップ1: 設定ファイルの編集
+### 方法A: GitHub連携で実行（推奨）
+
+#### ステップ1: 設定ファイルの編集
+
+[run_sagemaker_github.py](run_sagemaker_github.py) の設定を編集：
+
+```python
+# 233-240行目を編集
+ROLE_ARN = 'arn:aws:iam::YOUR_ACCOUNT_ID:role/YOUR_SAGEMAKER_ROLE'
+BUCKET_NAME = 'your-bigfive-bucket'
+REGION = 'us-west-2'
+
+# GitHub設定（通常はデフォルトのままでOK）
+GITHUB_REPO = 'https://github.com/tatenotoshikazu-cloud/bigfive-personality-sagemaker.git'
+GITHUB_BRANCH = 'main'
+```
+
+#### ステップ2: SageMaker実行
+
+```bash
+# run_sagemaker_github.py の最終行のコメントアウトを解除
+# main()  # ← このコメントを外す
+
+# 実行
+python run_sagemaker_github.py
+```
+
+**メリット**:
+- GitHubから最新コードを自動取得
+- コードのバージョン管理が容易
+- S3へのコードアップロード不要
+
+---
+
+### 方法B: 従来の方法（ローカルコードを使用）
+
+#### ステップ1: 設定ファイルの編集
 
 [run_sagemaker.py](run_sagemaker.py) の設定を編集：
 
