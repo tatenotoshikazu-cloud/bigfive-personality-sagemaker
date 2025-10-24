@@ -32,15 +32,16 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 class BigFivePersonaDataset(Dataset):
     """
     Big Five予測用データセット
-    RealPersonaChatデータ（Big Fiveラベル付き）
+    Fatima0923/Automated-Personality-Predictionデータ（Big Fiveラベル付き）
     """
 
-    def __init__(self, dataset, tokenizer, max_length=512):
+    def __init__(self, dataset, tokenizer, max_length=512, min_text_length=10):
         self.dataset = dataset
         self.tokenizer = tokenizer
         self.max_length = max_length
+        self.min_text_length = min_text_length
 
-        # Big Five特性
+        # Big Five特性（データセットのフィールド名に合わせる）
         self.trait_columns = [
             'openness', 'conscientiousness', 'extraversion',
             'agreeableness', 'neuroticism'
@@ -52,14 +53,14 @@ class BigFivePersonaDataset(Dataset):
     def __getitem__(self, idx):
         example = self.dataset[idx]
 
-        # ペルソナテキスト取得
-        persona_text = example.get('persona', '')
-        if not persona_text or len(persona_text.strip()) < 10:
-            persona_text = "No persona information available."
+        # テキスト取得（'text'フィールドを使用）
+        text_content = example.get('text', '')
+        if not text_content or len(text_content.strip()) < self.min_text_length:
+            text_content = "No personality information available."
 
         # トークン化
         encoding = self.tokenizer(
-            persona_text,
+            text_content,
             truncation=True,
             max_length=self.max_length,
             padding='max_length',
@@ -67,8 +68,9 @@ class BigFivePersonaDataset(Dataset):
         )
 
         # Big Five スコア取得 (0-1に正規化)
+        # データセットは0-99スケールなので、デフォルト値は50.0
         labels = torch.tensor([
-            float(example.get(trait, 0.5)) / 100.0  # 0-100 → 0-1
+            float(example.get(trait, 50.0)) / 99.0  # 0-99 → 0-1
             for trait in self.trait_columns
         ], dtype=torch.float32)
 
@@ -240,12 +242,34 @@ def main():
 
     # データロード
     print("\n[2/6] Loading datasets...")
-    # RealPersonaChatデータロード（Hugging Faceから直接）
-    print("Loading RealPersonaChat dataset from Hugging Face...")
-    dataset = load_dataset("DavidIRL/real-persona-chat", split='train')
+    # Automated Personality Predictionデータロード（Hugging Faceから直接）
+    print("Loading Automated-Personality-Prediction dataset from Hugging Face...")
+    print("Dataset: Fatima0923/Automated-Personality-Prediction")
+    print("Source: Reddit comments with Big Five labels (0-99 scale)")
+
+    dataset = load_dataset("Fatima0923/Automated-Personality-Prediction", split='train')
+
+    # データセット構造を検証
+    print("\n[Validation] Checking dataset structure...")
+    if len(dataset) == 0:
+        raise ValueError("Dataset is empty!")
+
+    sample = dataset[0]
+    print(f"Sample keys: {list(sample.keys())}")
+
+    required_fields = ['text', 'openness', 'conscientiousness', 'extraversion',
+                       'agreeableness', 'neuroticism']
+    missing_fields = [f for f in required_fields if f not in sample]
+
+    if missing_fields:
+        raise ValueError(f"Dataset missing required fields: {missing_fields}")
+
+    print(f"✓ All required fields present")
+    print(f"✓ Total samples: {len(dataset)}")
+    print(f"✓ Sample text length: {len(sample['text'])} chars")
 
     # Train/Val分割
-    print("Splitting dataset into train/validation...")
+    print("\nSplitting dataset into train/validation (80/20)...")
     dataset = dataset.train_test_split(test_size=0.2, seed=42)
     train_raw = dataset['train']
     val_raw = dataset['test']
