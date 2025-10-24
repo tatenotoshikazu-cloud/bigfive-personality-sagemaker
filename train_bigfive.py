@@ -287,17 +287,32 @@ def main():
 
     # Stage 1モデルをロード
     print("\n[3/6] Loading Stage 1 model...")
-    base_model = AutoModel.from_pretrained(args.model_name)
 
-    # Stage 1のLoRA重みをロード
     if os.path.exists(args.stage1_model_path):
-        print(f"Loading Stage 1 LoRA weights from {args.stage1_model_path}")
-        base_model = PeftModel.from_pretrained(base_model, args.stage1_model_path)
-        # LoRAをマージ（オプション）
-        base_model = base_model.merge_and_unload()
+        # Check if it's a PEFT adapter or full model
+        adapter_config_path = os.path.join(args.stage1_model_path, 'adapter_config.json')
+
+        if os.path.exists(adapter_config_path):
+            # Case 1: LoRA adapter format (expected in future)
+            print(f"✓ Loading Stage 1 LoRA adapter from {args.stage1_model_path}")
+            base_model = AutoModel.from_pretrained(args.model_name)
+            base_model = PeftModel.from_pretrained(base_model, args.stage1_model_path)
+            base_model = base_model.merge_and_unload()
+            print("✓ LoRA weights merged successfully")
+        else:
+            # Case 2: Full model format (current Stage 1 output)
+            print(f"✓ Loading Stage 1 full model from {args.stage1_model_path}")
+            try:
+                base_model = AutoModel.from_pretrained(args.stage1_model_path)
+                print("✓ Stage 1 model loaded successfully")
+            except Exception as e:
+                print(f"⚠ Warning: Failed to load Stage 1 model: {e}")
+                print("→ Falling back to base model")
+                base_model = AutoModel.from_pretrained(args.model_name)
     else:
-        print(f"Warning: Stage 1 model not found at {args.stage1_model_path}")
-        print("Using base model without Stage 1 weights")
+        print(f"⚠ Warning: Stage 1 model not found at {args.stage1_model_path}")
+        print("→ Using base XLM-RoBERTa without Stage 1 weights")
+        base_model = AutoModel.from_pretrained(args.model_name)
 
     # Big Five予測モデル作成
     print("\n[4/6] Creating Big Five regression model...")
