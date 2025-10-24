@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Stage 2: Big Five Personality Prediction
 Stage 1で学習したContrastive Learningモデルを基盤に
 RealPersonaChatのBig Fiveラベル付きデータでファインチューニング
 """
+
+import sys
+import io
+# Set UTF-8 encoding for stdout/stderr
+if sys.version_info[0] >= 3:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 import argparse
 import os
