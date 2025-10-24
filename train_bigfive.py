@@ -232,28 +232,22 @@ def main():
 
     # データロード
     print("\n[2/6] Loading datasets...")
-    try:
-        # RealPersonaChatデータロード
-        print("Loading RealPersonaChat dataset...")
-        dataset = load_dataset("DavidIRL/real-persona-chat", split='train')
+    # RealPersonaChatデータロード（Hugging Faceから直接）
+    print("Loading RealPersonaChat dataset from Hugging Face...")
+    dataset = load_dataset("DavidIRL/real-persona-chat", split='train')
 
-        # Train/Val分割
-        dataset = dataset.train_test_split(test_size=0.2, seed=42)
-        train_dataset = dataset['train']
-        val_dataset = dataset['test']
+    # Train/Val分割
+    print("Splitting dataset into train/validation...")
+    dataset = dataset.train_test_split(test_size=0.2, seed=42)
+    train_raw = dataset['train']
+    val_raw = dataset['test']
 
-        print(f"Train samples: {len(train_dataset)}")
-        print(f"Val samples: {len(val_dataset)}")
-
-    except Exception as e:
-        print(f"Warning: Failed to load RealPersonaChat: {e}")
-        print("Attempting to load from S3/local...")
-        train_dataset = load_from_disk(args.train_data)
-        val_dataset = load_from_disk(args.val_data)
+    print(f"Train samples: {len(train_raw)}")
+    print(f"Val samples: {len(val_raw)}")
 
     # データセット作成
-    train_dataset = BigFivePersonaDataset(train_dataset, tokenizer, args.max_length)
-    val_dataset = BigFivePersonaDataset(val_dataset, tokenizer, args.max_length)
+    train_dataset = BigFivePersonaDataset(train_raw, tokenizer, args.max_length)
+    val_dataset = BigFivePersonaDataset(val_raw, tokenizer, args.max_length)
 
     # DataLoader作成
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
