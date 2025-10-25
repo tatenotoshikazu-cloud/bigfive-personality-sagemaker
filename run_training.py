@@ -63,7 +63,7 @@ estimator = PyTorch(
     max_run=7200,   # 最大実行時間（2時間）
 )
 
-print("✓ Estimator作成完了")
+print("[OK] Estimator作成完了")
 
 # トレーニング実行
 print("\n[2/3] トレーニングを開始します...")
@@ -80,7 +80,7 @@ try:
     })
 
     print("\n" + "=" * 80)
-    print("✓ トレーニング完了！")
+    print("[SUCCESS] トレーニング完了！")
     print("=" * 80)
     print(f"完了時刻: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"モデル保存先: {estimator.model_data}")
@@ -93,7 +93,7 @@ try:
 
 except Exception as e:
     print("\n" + "=" * 80)
-    print("✗ エラーが発生しました")
+    print("[ERROR] エラーが発生しました")
     print("=" * 80)
     print(f"エラー内容: {e}")
     print("\n確認事項:")

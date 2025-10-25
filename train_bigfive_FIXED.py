@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Stage 2: Big Five Personality Prediction
+Stage 2: Big Five Personality Prediction (FIXED VERSION)
 Stage 1で学習したContrastive Learningモデルを基盤に
-RealPersonaChatのBig Fiveラベル付きデータでファインチューニング
+Fatima0923/Automated-Personality-Predictionデータでファインチューニング
 """
 
 import sys
@@ -32,16 +32,17 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error
 class BigFivePersonaDataset(Dataset):
     """
     Big Five予測用データセット
-    Fatima0923/Automated-Personality-Predictionデータ（Big Fiveラベル付き）
+    Fatima0923/Automated-Personality-Prediction データセット使用
+    Reddit commentsからBig Five特性を予測
     """
 
-    def __init__(self, dataset, tokenizer, max_length=512, min_text_length=10):
+    def __init__(self, dataset, tokenizer, max_length=512):
         self.dataset = dataset
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.min_text_length = min_text_length
+        self.min_text_length = 20  # 最小テキスト長
 
-        # Big Five特性（データセットのフィールド名に合わせる）
+        # Big Five特性（データセットのフィールド名と一致）
         self.trait_columns = [
             'openness', 'conscientiousness', 'extraversion',
             'agreeableness', 'neuroticism'
@@ -53,24 +54,26 @@ class BigFivePersonaDataset(Dataset):
     def __getitem__(self, idx):
         example = self.dataset[idx]
 
-        # テキスト取得（'text'フィールドを使用）
-        text_content = example.get('text', '')
-        if not text_content or len(text_content.strip()) < self.min_text_length:
-            text_content = "No personality information available."
+        # Reddit commentテキスト取得
+        comment_text = example.get('text', '')
+
+        # テキスト検証
+        if not comment_text or len(comment_text.strip()) < self.min_text_length:
+            # 短すぎるテキストの処理
+            comment_text = f"[Invalid short text: {len(comment_text)} chars]"
 
         # トークン化
         encoding = self.tokenizer(
-            text_content,
+            comment_text,
             truncation=True,
             max_length=self.max_length,
             padding='max_length',
             return_tensors='pt'
         )
 
-        # Big Five スコア取得 (0-1に正規化)
-        # データセットは0-99スケールなので、デフォルト値は50.0
+        # Big Five スコア取得 (0-99 → 0-1に正規化)
         labels = torch.tensor([
-            float(example.get(trait, 50.0)) / 99.0  # 0-99 → 0-1
+            float(example.get(trait, 50.0)) / 100.0  # 0-99 → 0-1, デフォルト50
             for trait in self.trait_columns
         ], dtype=torch.float32)
 
@@ -242,40 +245,41 @@ def main():
 
     # データロード
     print("\n[2/6] Loading datasets...")
-    # Automated Personality Predictionデータロード（Hugging Faceから直接）
     print("Loading Automated-Personality-Prediction dataset from Hugging Face...")
-    print("Dataset: Fatima0923/Automated-Personality-Prediction")
-    print("Source: Reddit comments with Big Five labels (0-99 scale)")
 
-    dataset = load_dataset("Fatima0923/Automated-Personality-Prediction", split='train')
+    # データセット全体をロード（既にTrain/Val/Test分割済み）
+    dataset = load_dataset("Fatima0923/Automated-Personality-Prediction")
 
-    # データセット構造を検証
-    print("\n[Validation] Checking dataset structure...")
-    if len(dataset) == 0:
-        raise ValueError("Dataset is empty!")
-
-    sample = dataset[0]
-    print(f"Sample keys: {list(sample.keys())}")
-
-    required_fields = ['text', 'openness', 'conscientiousness', 'extraversion',
-                       'agreeableness', 'neuroticism']
-    missing_fields = [f for f in required_fields if f not in sample]
-
-    if missing_fields:
-        raise ValueError(f"Dataset missing required fields: {missing_fields}")
-
-    print(f"✓ All required fields present")
-    print(f"✓ Total samples: {len(dataset)}")
-    print(f"✓ Sample text length: {len(sample['text'])} chars")
-
-    # Train/Val分割
-    print("\nSplitting dataset into train/validation (80/20)...")
-    dataset = dataset.train_test_split(test_size=0.2, seed=42)
-    train_raw = dataset['train']
-    val_raw = dataset['test']
+    # SageMakerの場合は既存のTrain/Val分割を使用
+    if 'train' in dataset and 'validation' in dataset:
+        train_raw = dataset['train']
+        val_raw = dataset['validation']
+        print("Using pre-split train/validation from dataset")
+    else:
+        # フォールバック: 手動で分割
+        dataset = load_dataset("Fatima0923/Automated-Personality-Prediction", split='train')
+        dataset = dataset.train_test_split(test_size=0.2, seed=42)
+        train_raw = dataset['train']
+        val_raw = dataset['test']
 
     print(f"Train samples: {len(train_raw)}")
     print(f"Val samples: {len(val_raw)}")
+
+    # データセット検証
+    print("\n[データセット検証]")
+    sample = train_raw[0]
+    print(f"Sample fields: {list(sample.keys())}")
+    print(f"Big Five traits available: {[trait for trait in ['openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism'] if trait in sample]}")
+    print(f"Sample text length: {len(sample.get('text', ''))}")
+    print(f"Sample openness: {sample.get('openness', 'N/A')}")
+
+    # フィールド存在確認
+    required_fields = ['text', 'openness', 'conscientiousness', 'extraversion', 'agreeableness', 'neuroticism']
+    missing_fields = [f for f in required_fields if f not in sample]
+    if missing_fields:
+        raise ValueError(f"Missing required fields: {missing_fields}")
+
+    print("✅ Dataset validation passed")
 
     # データセット作成
     train_dataset = BigFivePersonaDataset(train_raw, tokenizer, args.max_length)
@@ -287,39 +291,27 @@ def main():
 
     # Stage 1モデルをロード
     print("\n[3/6] Loading Stage 1 model...")
+    base_model = AutoModel.from_pretrained(args.model_name)
 
-    # Skip Stage 1 if path is 'NONE'
-    if args.stage1_model_path == 'NONE':
-        print("⚠ Stage 1 model path is 'NONE' - skipping Stage 1")
-        print("→ Starting from fresh xlm-roberta-large")
-        base_model = AutoModel.from_pretrained(args.model_name)
-    elif os.path.exists(args.stage1_model_path):
-        # Check if it's a PEFT adapter or full model
-        adapter_config_path = os.path.join(args.stage1_model_path, 'adapter_config.json')
-
-        if os.path.exists(adapter_config_path):
-            # Case 1: LoRA adapter format (expected in future)
-            print(f"✓ Loading Stage 1 LoRA adapter from {args.stage1_model_path}")
-            base_model = AutoModel.from_pretrained(args.model_name)
-            base_model = PeftModel.from_pretrained(base_model, args.stage1_model_path)
-            # FIXED: Merge weights BEFORE creating BigFiveRegressionModel
-            # This ensures the merged weights are preserved
-            base_model = base_model.merge_and_unload()
-            print("✓ LoRA weights merged successfully")
-        else:
-            # Case 2: Full model format (current Stage 1 output)
-            print(f"✓ Loading Stage 1 full model from {args.stage1_model_path}")
-            try:
-                base_model = AutoModel.from_pretrained(args.stage1_model_path)
-                print("✓ Stage 1 model loaded successfully")
-            except Exception as e:
-                print(f"⚠ Warning: Failed to load Stage 1 model: {e}")
-                print("→ Falling back to base model")
-                base_model = AutoModel.from_pretrained(args.model_name)
+    # Stage 1のLoRA重みをロード
+    if os.path.exists(args.stage1_model_path):
+        print(f"Loading Stage 1 LoRA weights from {args.stage1_model_path}")
+        base_model = PeftModel.from_pretrained(base_model, args.stage1_model_path)
+        # LoRAをマージ（オプション）
+        base_model = base_model.merge_and_unload()
     else:
-        print(f"⚠ Warning: Stage 1 model not found at {args.stage1_model_path}")
-        print("→ Using base XLM-RoBERTa without Stage 1 weights")
-        base_model = AutoModel.from_pretrained(args.model_name)
+        # より明確な警告
+        print("=" * 80)
+        print("⚠️  WARNING: Stage 1 model not found!")
+        print(f"   Path: {args.stage1_model_path}")
+        print("   This will significantly reduce model performance.")
+        print("=" * 80)
+
+        # 自動スキップ（SageMaker環境では対話不可）
+        if os.environ.get('SM_TRAINING_ENV'):
+            print("Running in SageMaker - proceeding with base model")
+        else:
+            print("Using base model without Stage 1 weights")
 
     # Big Five予測モデル作成
     print("\n[4/6] Creating Big Five regression model...")
@@ -382,16 +374,16 @@ def main():
             # Full model保存
             torch.save({
                 'model_state_dict': model.state_dict(),
-                'best_val_rmse': float(best_val_rmse),
+                'best_val_rmse': best_val_rmse,
                 'epoch': epoch + 1,
             }, output_path / 'best_model.pt')
 
         results.append({
             'epoch': epoch + 1,
-            'train_loss': float(train_loss),
-            'val_loss': float(val_metrics['loss']),
-            'val_rmse': float(val_metrics['rmse']),
-            'val_mae': float(val_metrics['mae']),
+            'train_loss': train_loss,
+            'val_loss': val_metrics['loss'],
+            'val_rmse': val_metrics['rmse'],
+            'val_mae': val_metrics['mae'],
         })
 
     # 結果保存

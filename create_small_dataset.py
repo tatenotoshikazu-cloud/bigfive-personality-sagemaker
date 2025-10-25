@@ -20,16 +20,15 @@ def create_small_realpersonachat(num_samples=100):
 
     # 元データ読み込み
     print("\n元データセット読み込み中...")
+    # New API: Remove trust_remote_code and use data_files
     dialogue_data = load_dataset(
         "nu-dialogue/real-persona-chat",
-        name="dialogue",
-        trust_remote_code=True
+        data_files={"train": "dialogue/train-*.parquet"}
     )
 
     interlocutor_data = load_dataset(
         "nu-dialogue/real-persona-chat",
-        name="interlocutor",
-        trust_remote_code=True
+        data_files={"train": "interlocutor/train-*.parquet"}
     )
 
     print(f"✓ 元データ: Dialogue={len(dialogue_data['train'])}件, Interlocutor={len(interlocutor_data['train'])}件")

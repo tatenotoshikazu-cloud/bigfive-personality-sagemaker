@@ -1,20 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Big Five Personality Prediction Script
-Stage 2モデルを使用して実際の文字起こしデータからBig Five推定
+Big Five Personality Prediction Script (Fixed)
+best_model.ptから完全なモデル（LoRA + Regression Head）をロード
 """
 
 import torch
 import json
-from transformers import AutoTokenizer, AutoModel
-from peft import PeftModel
 import os
 from datetime import datetime
+from transformers import AutoTokenizer
 
 def main():
     print("=" * 80)
-    print("Big Five Personality Prediction - Real Transcript Data")
+    print("Big Five Personality Prediction - Real Transcript Data (Fixed)")
     print("=" * 80)
 
     # Device設定
@@ -22,27 +21,75 @@ def main():
     print(f"\nUsing device: {device}")
 
     # モデルパス
-    BASE_MODEL = "xlm-roberta-large"
-    LORA_WEIGHTS = "models/stage2_bigfive/lora_weights"
+    MODEL_DIR = "models/stage2_bigfive"
+    MODEL_FILE = os.path.join(MODEL_DIR, "best_model.pt")
+    TOKENIZER_DIR = os.path.join(MODEL_DIR, "lora_weights")
 
-    if not os.path.exists(LORA_WEIGHTS):
-        raise FileNotFoundError(f"LoRA weights not found: {LORA_WEIGHTS}")
+    if not os.path.exists(MODEL_FILE):
+        raise FileNotFoundError(f"Model file not found: {MODEL_FILE}")
 
-    print(f"\nLoading model from: {LORA_WEIGHTS}")
+    print(f"\nLoading model from: {MODEL_FILE}")
+    print(f"Model file size: {os.path.getsize(MODEL_FILE) / 1024 / 1024:.2f} MB")
 
     # Tokenizer読み込み
-    tokenizer = AutoTokenizer.from_pretrained(LORA_WEIGHTS)
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_DIR)
     print(f"Tokenizer loaded: vocab_size={tokenizer.vocab_size}")
 
-    # Base model読み込み
-    base_model = AutoModel.from_pretrained(BASE_MODEL)
-    print(f"Base model loaded: {BASE_MODEL}")
+    # モデル全体をロード（LoRA + Regression Head）
+    checkpoint = torch.load(MODEL_FILE, map_location=device)
 
-    # LoRA weightsを適用
-    model = PeftModel.from_pretrained(base_model, LORA_WEIGHTS)
+    # チェックポイントの内容確認
+    print("\nCheckpoint keys:")
+    for key in checkpoint.keys():
+        if isinstance(checkpoint[key], torch.Tensor):
+            print(f"  {key}: {checkpoint[key].shape}")
+        else:
+            print(f"  {key}: {type(checkpoint[key])}")
+
+    # モデルの再構築
+    from transformers import AutoModel
+    import torch.nn as nn
+    from peft import PeftModel
+
+    class BigFiveRegressionModel(nn.Module):
+        def __init__(self, base_model_name, lora_weights_dir):
+            super().__init__()
+            # Base model + LoRA
+            base_model = AutoModel.from_pretrained(base_model_name)
+            self.encoder = PeftModel.from_pretrained(base_model, lora_weights_dir)
+            self.hidden_dim = self.encoder.config.hidden_size
+
+            # Regression head (3-layer: 1024 → 512 → 256 → 5)
+            self.regressor = nn.Sequential(
+                nn.Linear(self.hidden_dim, 512),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(512, 256),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(256, 5)
+            )
+
+        def forward(self, input_ids, attention_mask):
+            outputs = self.encoder(input_ids=input_ids, attention_mask=attention_mask)
+            cls_embedding = outputs.last_hidden_state[:, 0, :]
+            predictions = self.regressor(cls_embedding)
+            return torch.sigmoid(predictions)  # 0-1に正規化
+
+    # モデル初期化
+    model = BigFiveRegressionModel("xlm-roberta-large", TOKENIZER_DIR)
+
+    # 重みをロード
+    if 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'])
+        print("\nLoaded model_state_dict from checkpoint")
+    else:
+        model.load_state_dict(checkpoint)
+        print("\nLoaded checkpoint directly as state_dict")
+
     model = model.to(device)
     model.eval()
-    print("LoRA weights applied successfully")
+    print("Model loaded successfully with regression head")
 
     # Big Fiveラベル
     BIG5_LABELS = [
@@ -71,15 +118,13 @@ def main():
             truncation=True,
             return_tensors='pt'
         )
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        input_ids = inputs['input_ids'].to(device)
+        attention_mask = inputs['attention_mask'].to(device)
 
         # 推論
         with torch.no_grad():
-            outputs = model(**inputs)
-            cls_embedding = outputs.last_hidden_state[:, 0, :]  # [CLS] token
-
-            # 最初の5次元をBig Fiveスコアとして使用（0-1スケールに正規化）
-            predictions = torch.sigmoid(cls_embedding[:, :5]).cpu().numpy()[0]
+            predictions = model(input_ids, attention_mask)
+            predictions = predictions.cpu().numpy()[0]
 
         # スコア辞書作成
         result = {}
@@ -137,13 +182,13 @@ def main():
         })
 
     # 結果保存
-    output_file = 'bigfive_predictions.json'
+    output_file = 'bigfive_predictions_fixed.json'
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump({
             'metadata': {
                 'prediction_date': datetime.now().isoformat(),
-                'model': BASE_MODEL,
-                'lora_weights': LORA_WEIGHTS,
+                'model_file': MODEL_FILE,
+                'tokenizer': TOKENIZER_DIR,
                 'total_transcripts': len(results)
             },
             'predictions': results
