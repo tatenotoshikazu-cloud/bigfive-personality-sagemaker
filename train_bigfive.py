@@ -375,16 +375,16 @@ def main():
             # Full model保存
             torch.save({
                 'model_state_dict': model.state_dict(),
-                'best_val_rmse': best_val_rmse,
+                'best_val_rmse': float(best_val_rmse),
                 'epoch': epoch + 1,
             }, output_path / 'best_model.pt')
 
         results.append({
             'epoch': epoch + 1,
-            'train_loss': train_loss,
-            'val_loss': val_metrics['loss'],
-            'val_rmse': val_metrics['rmse'],
-            'val_mae': val_metrics['mae'],
+            'train_loss': float(train_loss),
+            'val_loss': float(val_metrics['loss']),
+            'val_rmse': float(val_metrics['rmse']),
+            'val_mae': float(val_metrics['mae']),
         })
 
     # 結果保存
